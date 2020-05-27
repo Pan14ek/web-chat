@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.2.1/css/bootstrap.min.css">
+    <title>Diffie-Hellman Chat</title>
+    <style>
+        body {
+            background: #fcfcfc;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="py-5 text-center">
+        <h2>Chat</h2>
+        <p class="lead">Write your name and start chatting!</p>
+    </div>
+    <div class="row">
+        <div class="col-6">
+            <h3>Message form</h3>
+            <form id="messForm">
+                <label for="name">Name</label>
+                <input type="text" name="name" id="name" placeholder="Write your name" class="form-control">
+                <br>
+                <label for="message">Message</label>
+                <textarea name="message" id="message" class="form-control" placeholder="Write your message"></textarea>
+                <br>
+                <input type="submit" value="Send" class="btn btn-danger">
+            </form>
+        </div>
+        <div class="col-6">
+            <h3>Messages</h3>
+
+            <div id="all_mess"></div>
+        </div>
+    </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.2/rollups/aes.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    const ZERO = 0;
+    const NEXT_CLIENT_TIMEOUT = 2000;
+    const min = 1;
+    const max = 6;
+
+    let alertClass = getAlertClass();
+
+    function getAlertClass() {
+        let alertClass;
+        const random = Math.floor(Math.random() * (max - min)) + min;
+        switch (random) {
+            case 1:
+                alertClass = 'secondary';
+                break;
+            case 2:
+                alertClass = 'danger';
+                break;
+            case 3:
+                alertClass = 'success';
+                break;
+            case 4:
+                alertClass = 'warning';
+                break;
+            case 5:
+                alertClass = 'info';
+                break;
+            case 6:
+                alertClass = 'light';
+                break;
+        }
+        return alertClass;
+    }
+
+    $(function () {
+        let socket = io.connect();
+        let form = $("#messForm");
+        let name = $("#name");
+        let textarea = $("#message");
+        let all_messages = $("#all_mess");
+        let p = ZERO;
+        let privateKey = ZERO;
+        let fullPublicKey = ZERO;
+
+        form.submit(function (event) {
+            event.preventDefault();
+            let message = textarea.val();
+            let letterArray = message.split('');
+            let encryptArray = [];
+            for (let i = ZERO; i < letterArray.length; i++) {
+                encryptArray[i] = message.charCodeAt(i) * fullPublicKey;
+            }
+            socket.emit('send mess', {mess: encryptArray, name: name.val(), className: alertClass});
+            textarea.val('');
+        });
+
+        socket.on('getPublicKeys', function (data) {
+            p = data.p;
+            let g = data.g;
+            let id = data.id;
+            let socketId = data.sockId;
+            privateKey = Math.floor(Math.random() * p);
+            let newPublicKey = Math.pow(g, privateKey) % p;
+            socket.emit('updateKeys', {newKey: newPublicKey, id: id, sockId: socketId})
+        });
+
+        socket.on('add mess', function (data) {
+            let encryptArray = data.mess;
+            let decryptMessage = "";
+            for (let i = ZERO; i < encryptArray.length; i++) {
+                decryptMessage += String.fromCharCode(encryptArray[i] / fullPublicKey);
+            }
+            all_messages.append("<div class='alert alert-" + data.className + "'><b>" + data.name + "</b>: " + decryptMessage + "</div>");
+        });
+
+        socket.on('CalculateNextNewKey', function (data) {
+            let publicKey = parseInt(data.newKey);
+            let newPublicKey = Math.pow(publicKey, privateKey) % p;
+            let userCounter = parseInt(data.userCounter) + 1;
+            console.log("Next new public key = " + newPublicKey + " , userCounter = " + userCounter);
+            setTimeout(function () {
+                socket.emit('nextClient', {newKey: newPublicKey, userCounter: userCounter, clientId: data.nextClientId})
+            }, NEXT_CLIENT_TIMEOUT);
+        });
+
+        socket.on('GetEncryptInfo', function (data) {
+            console.log("New public key:" + data.newKey);
+            fullPublicKey = data.newKey;
+        });
+
+    });
+
+</script>
+</body>
+</html>
